@@ -1,4 +1,4 @@
-m flask import Flask, Response, render_template_string
+from flask import Flask, Response, render_template_string
 import cv2
 import mediapipe as mp
 import math

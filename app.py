@@ -1,4 +1,4 @@
-from flask import Flask, Response, render_template_string
+m flask import Flask, Response, render_template_string
 import cv2
 import mediapipe as mp
 import math
@@ -147,6 +147,7 @@ def generate_frames():
 
 @app.route('/')
 def index():
+    # Styled HTML template with static diagram to the left of webcam output
     return render_template_string('''
         <html>
             <head>
@@ -159,14 +160,24 @@ def index():
                         text-align: center;
                     }
                     h2 { margin-top: 20px; }
-                    .video-container { display: inline-block; position: relative; }
-                    img { border: 5px solid #fff; border-radius: 10px; }
+                    .container { display: flex; justify-content: center; align-items: flex-start; gap: 20px; margin-top: 20px; }
+                    .video-container img, .diagram-container img {
+                        border: 5px solid #fff; 
+                        border-radius: 10px;
+                    }
+                    .diagram-container { width: 300px; }
                 </style>
             </head>
             <body>
                 <h2>Hand Wireframe with Grip Recommendation</h2>
-                <div class="video-container">
-                    <img src="{{ url_for('video_feed') }}" width="640" height="480">
+                <div class="container">
+                    <div class="diagram-container">
+                        <img src="{{ url_for('static', filename='hand_diagram.png') }}" width="300">
+                        <p>Place fingers together, square to grid, thumb tight against index finger.</p>
+                    </div>
+                    <div class="video-container">
+                        <img src="{{ url_for('video_feed') }}" width="640" height="480">
+                    </div>
                 </div>
                 <p>Grip recommendation updates live above</p>
             </body>

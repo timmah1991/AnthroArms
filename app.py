@@ -3,6 +3,7 @@ import cv2
 import mediapipe as mp
 import math
 import numpy as np
+import time
 
 app = Flask(__name__)
 
@@ -50,6 +51,10 @@ def get_size_label(value, key):
 def generate_frames():
     global scale_cm_per_px, last_valid_scale, frame_count
     grip_recommendation = "N/A"
+    last_grip = None
+    last_change_time = time.time()
+    freeze_frame = None
+    popup_duration = 5  # seconds
 
     while True:
         ret, frame = cap.read()
@@ -61,7 +66,7 @@ def generate_frames():
         h, w, _ = frame.shape
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Checkerboard detection every 10 frames
+        # --- Checkerboard detection every 10 frames ---
         if frame_count % 10 == 0:
             gray_small = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
             found, corners = cv2.findChessboardCorners(gray_small, CHECKERBOARD, None)
@@ -90,11 +95,6 @@ def generate_frames():
         if results.multi_hand_landmarks and scale_cm_per_px:
             hand = results.multi_hand_landmarks[0]
             mp_drawing.draw_landmarks(frame, hand, mp_hands.HAND_CONNECTIONS)
-
-            def px(a, b):
-                ax, ay = int(a.x * w), int(a.y * h)
-                bx, by = int(b.x * w), int(b.y * h)
-                return (ax, ay), (bx, by)
 
             # --- HEIGHT: average spacing between index → middle → ring → pinky fingertips ---
             fingertips = [hand.landmark[8], hand.landmark[12], hand.landmark[16], hand.landmark[20]]
@@ -130,24 +130,46 @@ def generate_frames():
                 grip_recommendation = '-'.join(labels)
                 cv2.putText(frame, f"Grip: {grip_recommendation}",
                             (10, h-40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
-                # Print to stdout
                 print(f"Grip recommendation: {grip_recommendation}")
 
+                # --- Stability detection for freeze ---
+                if grip_recommendation == last_grip:
+                    if time.time() - last_change_time > popup_duration:
+                        if freeze_frame is None:
+                            freeze_frame = frame.copy()
+                else:
+                    last_change_time = time.time()
+                    last_grip = grip_recommendation
+                    freeze_frame = None  # reset
+
+        # Draw frame or frozen frame
+        output_frame = freeze_frame if freeze_frame is not None else frame
+
+        # If frozen, overlay large pop-up
+        if freeze_frame is not None:
+            overlay = output_frame.copy()
+            cv2.rectangle(overlay, (50, h//2 - 100), (w-50, h//2 + 100), (0,0,0), -1)
+            cv2.putText(overlay, f"Your recommended grip:", (100, h//2 - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 2, (0,255,0), 4)
+            cv2.putText(overlay, f'"{grip_recommendation}"', (100, h//2 + 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 3, (0,255,255), 6)
+            alpha = 0.8
+            cv2.addWeighted(overlay, alpha, output_frame, 1 - alpha, 0, output_frame)
+
         if scale_cm_per_px:
-            cv2.putText(frame, f"Scale: {scale_cm_per_px:.4f} cm/px",
+            cv2.putText(output_frame, f"Scale: {scale_cm_per_px:.4f} cm/px",
                         (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
         else:
-            cv2.putText(frame, "Waiting for checkerboard calibration...",
+            cv2.putText(output_frame, "Waiting for checkerboard calibration...",
                         (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
 
-        ret, buffer = cv2.imencode('.jpg', frame)
+        ret, buffer = cv2.imencode('.jpg', output_frame)
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 @app.route('/')
 def index():
-    # Styled HTML template with static diagram to the left of webcam output
     return render_template_string('''
         <html>
             <head>

@@ -96,29 +96,27 @@ def generate_frames():
                 bx, by = int(b.x * w), int(b.y * h)
                 return (ax, ay), (bx, by)
 
-            # Calculate height (avg finger spacing)
-            finger_heights = []
-            for finger in [[5,6,7,8],[9,10,11,12],[13,14,15,16],[17,18,19,20]]:
-                for i in range(3):
-                    a = hand.landmark[finger[i]]
-                    b = hand.landmark[finger[i+1]]
-                    dist_cm = euclidean(a,b) * w * scale_cm_per_px
-                    finger_heights.append(dist_cm)
-            if finger_heights:
-                measured['height'] = np.mean(finger_heights)
+            # --- HEIGHT: average spacing between index → middle → ring → pinky fingertips ---
+            fingertips = [hand.landmark[8], hand.landmark[12], hand.landmark[16], hand.landmark[20]]
+            distances = []
+            for i in range(len(fingertips)-1):
+                dist_cm = euclidean(fingertips[i], fingertips[i+1]) * w * scale_cm_per_px
+                distances.append(dist_cm)
+            if distances:
+                measured['height'] = np.mean(distances)
 
-            # Calculate width (thumb length)
+            # --- WIDTH: thumb length ---
             thumb_tip = hand.landmark[4]
             thumb_base = hand.landmark[2]
             measured['width'] = euclidean(thumb_tip, thumb_base) * w * scale_cm_per_px
 
-            # Calculate depth (wrist to middle finger tip)
-            wrist = hand.landmark[0]
-            middle_tip = hand.landmark[12]
-            measured['depth'] = euclidean(wrist, middle_tip) * w * scale_cm_per_px
+            # --- DEPTH: index finger length from knuckle to tip ---
+            index_knuckle = hand.landmark[5]
+            index_tip = hand.landmark[8]
+            measured['depth'] = euclidean(index_knuckle, index_tip) * w * scale_cm_per_px
 
             # Draw measurement chart on frame
-            cv2.rectangle(frame, (10,10), (200,120), (50,50,50), -1)
+            cv2.rectangle(frame, (10,10), (200,130), (50,50,50), -1)
             y = 30
             for k in ['height','width','depth']:
                 if k in measured:
@@ -132,6 +130,8 @@ def generate_frames():
                 grip_recommendation = '-'.join(labels)
                 cv2.putText(frame, f"Grip: {grip_recommendation}",
                             (10, h-40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+                # Print to stdout
+                print(f"Grip recommendation: {grip_recommendation}")
 
         if scale_cm_per_px:
             cv2.putText(frame, f"Scale: {scale_cm_per_px:.4f} cm/px",
@@ -147,7 +147,6 @@ def generate_frames():
 
 @app.route('/')
 def index():
-    # Styled HTML template with measurement chart placeholder
     return render_template_string('''
         <html>
             <head>

@@ -27,9 +27,9 @@ frame_count = 0
 
 # Measurement thresholds
 MEASUREMENT_CHART = {
-    "height": (0.07, 0.12),
-    "width":  (0.05, 0.10),
-    "depth":  (0.09, 0.14)
+    "height": (3, 5),
+    "width":  (6, 8),
+    "depth":  (22, 28)
 }
 
 def euclidean(a, b):

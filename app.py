@@ -55,6 +55,9 @@ def generate_frames():
     last_change_time = time.time()
     freeze_frame = None
     popup_duration = 5  # seconds
+    countdown_started = False
+    countdown_start_time = None
+    countdown_value = 5
 
     while True:
         ret, frame = cap.read()
@@ -92,11 +95,13 @@ def generate_frames():
         results = hands.process(rgb)
 
         measured = {}
+        hand_detected = False
         if results.multi_hand_landmarks and scale_cm_per_px:
             hand = results.multi_hand_landmarks[0]
             mp_drawing.draw_landmarks(frame, hand, mp_hands.HAND_CONNECTIONS)
+            hand_detected = True
 
-            # --- HEIGHT: average spacing between index → middle → ring → pinky fingertips ---
+            # --- HEIGHT ---
             fingertips = [hand.landmark[8], hand.landmark[12], hand.landmark[16], hand.landmark[20]]
             distances = []
             for i in range(len(fingertips)-1):
@@ -105,17 +110,17 @@ def generate_frames():
             if distances:
                 measured['height'] = np.mean(distances)
 
-            # --- WIDTH: thumb length ---
+            # --- WIDTH ---
             thumb_tip = hand.landmark[4]
             thumb_base = hand.landmark[2]
             measured['width'] = euclidean(thumb_tip, thumb_base) * w * scale_cm_per_px
 
-            # --- DEPTH: index finger length from knuckle to tip ---
+            # --- DEPTH ---
             index_knuckle = hand.landmark[5]
             index_tip = hand.landmark[8]
             measured['depth'] = euclidean(index_knuckle, index_tip) * w * scale_cm_per_px
 
-            # Draw measurement chart on frame
+            # Draw measurement chart
             cv2.rectangle(frame, (10,10), (200,130), (50,50,50), -1)
             y = 30
             for k in ['height','width','depth']:
@@ -132,20 +137,39 @@ def generate_frames():
                             (10, h-40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
                 print(f"Grip recommendation: {grip_recommendation}")
 
-                # --- Stability detection for freeze ---
+                # --- Stability detection ---
                 if grip_recommendation == last_grip:
-                    if time.time() - last_change_time > popup_duration:
-                        if freeze_frame is None:
+                    if countdown_started:
+                        elapsed = time.time() - countdown_start_time
+                        countdown_value = max(0, int(popup_duration - elapsed))
+                        if countdown_value == 0 and freeze_frame is None:
                             freeze_frame = frame.copy()
+                    else:
+                        countdown_started = True
+                        countdown_start_time = time.time()
+                        countdown_value = popup_duration
                 else:
                     last_change_time = time.time()
                     last_grip = grip_recommendation
-                    freeze_frame = None  # reset
+                    freeze_frame = None
+                    countdown_started = True
+                    countdown_start_time = time.time()
+                    countdown_value = popup_duration
+
+        else:
+            countdown_started = False
+            countdown_value = popup_duration
 
         # Draw frame or frozen frame
         output_frame = freeze_frame if freeze_frame is not None else frame
 
-        # If frozen, overlay large pop-up
+        # Overlay countdown if hand detected and not yet frozen
+        if hand_detected and freeze_frame is None and countdown_started:
+            cv2.rectangle(output_frame, (w//2 - 150, 50), (w//2 + 150, 150), (0,0,0), -1)
+            cv2.putText(output_frame, f"HOLD STILL: {countdown_value}", 
+                        (w//2 - 130, 120), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,255,255), 5)
+
+        # Overlay large pop-up if frozen
         if freeze_frame is not None:
             overlay = output_frame.copy()
             cv2.rectangle(overlay, (50, h//2 - 100), (w-50, h//2 + 100), (0,0,0), -1)
@@ -168,6 +192,7 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
+# --- Flask routes remain unchanged ---
 @app.route('/')
 def index():
     return render_template_string('''
